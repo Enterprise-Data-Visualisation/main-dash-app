@@ -41,6 +41,7 @@ def get_color_with_alpha(color_hex, alpha=0.1):
 
 
 app = Dash(__name__)
+server = app.server  # Required for production deployment
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
