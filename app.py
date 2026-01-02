@@ -29,17 +29,20 @@ ALPHA_TRANSPARENCY = 0.1
 
 def get_color_with_alpha(color_hex, alpha=0.1):
     """Convert hex color to rgba with specified alpha"""
-    hex_color = color_hex.lstrip('#')
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    return f'rgba({r}, {g}, {b}, {alpha})'
+    try:
+        hex_color = color_hex.lstrip('#')
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return f'rgba({r}, {g}, {b}, {alpha})'
+    except (ValueError, IndexError, TypeError):
+        # Fallback for invalid colors (e.g. if HSL is passed)
+        return f'rgba(100, 100, 100, {alpha})'
 
 
 app = Dash(__name__)
 
 app.layout = html.Div([
-    html.H1("Signal Generator App"),
     dcc.Location(id='url', refresh=False),
     dcc.Graph(id='main-graph'),
     dcc.Interval(id='interval-component', interval=2000)
