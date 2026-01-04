@@ -1,8 +1,22 @@
 from dash import Dash, html, dcc, Input, Output, callback
-from signal_generator import generate_historical_signals
 from datetime import datetime, timedelta
 import json
+import os
 from urllib.parse import parse_qs
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+# Load env vars
+load_dotenv()
+
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
+
+supabase: Client = None
+if url and key:
+    supabase = create_client(url, key)
+else:
+    print("Warning: SUPABASE_URL or SUPABASE_KEY not found.")
 
 # Color palette for signals (matches React frontend)
 COLOR_PALETTE = [
@@ -236,19 +250,38 @@ def parse_query_params(search):
     return signal_ids, signal_metadata, is_live, start, end, theme_name, mode, highlight_id
 
 
+
+def fetch_measurements_from_db(signal_id, start_time, end_time):
+    """Fetch measurements from Supabase"""
+    try:
+        if not supabase:
+            return []
+            
+        # Format timestamps for Supabase (ISO string)
+        start_str = start_time.isoformat()
+        end_str = end_time.isoformat()
+        
+        response = supabase.table('measurements') \
+            .select('*') \
+            .eq('signal_id', signal_id) \
+            .gte('timestamp', start_str) \
+            .lte('timestamp', end_str) \
+            .order('timestamp', desc=False) \
+            .execute()
+            
+        return response.data
+    except Exception as e:
+        print(f"DB Error: {e}")
+        return []
+
 def build_signal_traces(signal_ids, signal_metadata, start, end, theme, highlight_id=None):
-    """Build chart traces for signals
-    
-    Returns: (chart_data, aggregation_level)
-    """
+    """Build chart traces for signals"""
     chart_data = []
-    aggregation_level = None
+    aggregation_level = 'raw' # Default
     
     for idx, signal_id in enumerate(signal_ids):
-        data = generate_historical_signals(signal_id, start, end)
-        
-        if data and aggregation_level is None:
-            aggregation_level = data[0].get('aggregation_level', 'unknown')
+        # Fetch Data from DB
+        data = fetch_measurements_from_db(signal_id, start, end)
         
         # Get color and name
         if signal_id in signal_metadata:
@@ -264,27 +297,22 @@ def build_signal_traces(signal_ids, signal_metadata, start, end, theme, highligh
         
         if highlight_id and highlight_id != signal_id:
             # Dim non-highlighted signals
-            line_color = get_color_with_alpha(color, 0.2) # Very dim line
-            fill_color = get_color_with_alpha(color, 0.05) # Very dim fill
+            line_color = get_color_with_alpha(color, 0.2)
+            fill_color = get_color_with_alpha(color, 0.05)
         
         # Build hover template
         hover_template = (
             f"<b>{name}</b><br>"
             "Time: %{x}<br>"
-            "Value: %{y:.2f}<br>"
-            "Min: %{customdata[0]:.2f}<br>"
-            "Max: %{customdata[1]:.2f}<extra></extra>"
+            "Value: %{y:.2f}<extra></extra>"
         )
         
         trace = {
             'x': [d['timestamp'] for d in data],
             'y': [d['value'] for d in data],
-            'customdata': [
-                [d.get('min_value', d['value']), d.get('max_value', d['value'])]
-                for d in data
-            ],
+            # 'customdata': [], # Removed min/max for raw data simplicity
             'type': 'scatter',
-            'mode': 'lines+markers',
+            'mode': 'lines+markers' if len(data) < 100 else 'lines', # Optimize for large datasets
             'name': name,
             'line': {'color': line_color, 'width': 2},
             'fill': 'tozeroy',
